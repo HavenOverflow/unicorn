@@ -73,11 +73,22 @@ static void uc_arm_mask_changed(CPUARMState *env, uc_hook_idx hook_idx,
 {
     struct uc_struct *uc = env->uc;
     struct hook *hook;
+    uint32_t pc;
     HOOK_FOREACH_VAR_DECLARE;
 
     if (!uc || old_value == new_value) {
         return;
     }
+
+    if (!uc->skip_sync_pc_on_exit) {
+        uintptr_t retaddr = GETPC();
+
+        if (retaddr) {
+            cpu_restore_pc_only(env_cpu(env), retaddr, false);
+        }
+    }
+
+    pc = env->regs[15];
 
     for (cur = uc->hook[hook_idx].head;
          cur != NULL && (hook = (struct hook *)cur->data); cur = cur->next) {
@@ -91,6 +102,12 @@ static void uc_arm_mask_changed(CPUARMState *env, uc_hook_idx hook_idx,
         if (uc->stop_request) {
             break;
         }
+    }
+
+    if (env->regs[15] != pc) {
+        uc->quit_request = true;
+        uc->skip_sync_pc_on_exit = true;
+        cpu_loop_exit(env_cpu(env));
     }
 }
 
